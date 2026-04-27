@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    :root { --main: #0035ad; }
+    body { font-family: 'Malgun Gothic', sans-serif; background: #f4f7f9; display: flex; justify-content: center; padding: 20px; margin: 0; }
+    .container { width: 100%; max-width: 480px; background: white; padding: 35px 25px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); position: relative; min-height: 400px; }
+    h2 { color: var(--main); text-align: center; margin-bottom: 25px; }
+    label { font-weight: bold; display: block; margin-bottom: 8px; color: #374151; font-size: 14px; }
+    input, select { width: 100%; padding: 14px; margin-bottom: 15px; border: 1.5px solid #e5e7eb; border-radius: 10px; font-size: 16px; box-sizing: border-box; }
+    .btn { background: var(--main); color: white; border: none; width: 100%; padding: 16px; border-radius: 10px; font-size: 17px; font-weight: bold; cursor: pointer; }
+    .btn-small { background: #6b7280; font-size: 13px; padding: 10px; width: auto; margin-top: 5px; }
+    .hidden { display: none !important; }
+    .card { background: #f9fafb; padding: 15px; border-radius: 12px; margin-bottom: 12px; border: 1px solid #eee; position: relative; }
+    .date-header { font-size: 16px; font-weight: bold; color: var(--main); margin-top: 25px; margin-bottom: 12px; border-bottom: 2px solid #eee; padding-bottom: 8px; }
+    .slot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .slot-btn { padding: 14px 5px; border: 1.5px solid #e5e7eb; border-radius: 8px; text-align: center; cursor: pointer; background: white; font-size: 15px; color: #444; }
+    .slot-btn.active { background: var(--main); color: white; border-color: var(--main); font-weight: bold; }
+    
+    /* Admin 숨기기 제어를 위해 id 부여 */
+    #adminBtn { position: absolute; bottom: 15px; right: 20px; font-size: 11px; color: #eee; cursor: pointer; }
+    
+    .list-item { font-size: 13px; padding: 10px 0; border-bottom: 1px solid #eee; position: relative; padding-right: 60px; }
+    .delete-btn { position: absolute; top: 10px; right: 10px; background: #ff4d4d; color: white; border: none; border-radius: 5px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
+    #loading { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(255,255,255,0.9); display:none; justify-content:center; align-items:center; z-index:9999; font-weight:bold; color:var(--main); flex-direction:column; }
+    
+    @media print {
+      body { background: white; padding: 0; }
+      body * { visibility: hidden; }
+      #view-admin-result, #view-admin-result * { visibility: visible; }
+      #view-admin-result { position: absolute; left: 0; top: 0; width: 100%; }
+      .no-print { display: none !important; }
+      .container { box-shadow: none; padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div id="loading"><span>⏳ 처리 중입니다...</span><br><small style="color:#666">잠시만 기다려주세요</small></div>
+  <div class="container">
+    <h2 id="mainTitle">상담 관리 시스템</h2>
+
+    <div id="view-p-code">
+      <label>학급 코드</label>
+      <input type="text" id="parentCode" placeholder="담임 교사에게 전달받은 학급 코드를 입력해주세요">
+      <button class="btn" onclick="checkParentCode()">다음</button>
+    </div>
+
+    <div id="view-p-name" class="hidden">
+      <label>학생 이름</label>
+      <input type="text" id="parentName" placeholder="학생의 이름을 정확히 입력하세요">
+      <button class="btn" onclick="checkParentName()">확인</button>
+    </div>
+
+    <div id="view-p-form" class="hidden">
+      <label>상담 방식</label>
+      <select id="consultType"><option value="방문">🏫 학교 방문</option><option value="전화">📞 전화 상담</option></select>
+      <div id="slot-container"></div>
+      <button class="btn" style="margin-top:25px;" onclick="submitApplication()">신청 완료하기</button>
+    </div>
+
+    <div id="view-admin-pw" class="hidden">
+      <label>관리자 비밀번호</label>
+      <input type="password" id="adminPw">
+      <button class="btn" onclick="verifyPw()">인증</button>
+    </div>
+
+    <div id="view-admin-code" class="hidden">
+      <label>본인 학급 코드를 입력해주세요</label>
+      <input type="text" id="adminClassCode">
+      <button class="btn" onclick="loadClassAdmin()">관리 페이지 진입</button>
+    </div>
+
+    <div id="view-admin-dashboard" class="hidden">
+      <h3>📋 신청 현황 (<span id="app-count">0</span>명)</h3>
+      <div id="app-list" style="max-height:300px; overflow-y:auto; margin-bottom:20px;"></div>
+      <button class="btn btn-small" style="background:#d93025" onclick="goToEditWithConfirm()">🔧 상담 일정 수정하기</button>
+      <button class="btn btn-small" style="background:#444" onclick="doFinalAssign()">📊 자동 배정 실행</button>
+    </div>
+
+    <div id="view-admin-setup" class="hidden">
+      <h3>⚙️ 상담 일정 설정</h3>
+      <div style="display:flex; gap:10px;">
+        <div><label>상담(분)</label><input type="number" id="tDur" value="15"></div>
+        <div><label>휴식(분)</label><input type="number" id="tBrk" value="5"></div>
+      </div>
+      <div id="date-list-container"></div>
+      <button class="btn btn-small" onclick="addNewDateRow()">➕ 날짜 추가</button>
+      <button class="btn" style="margin-top:20px;" onclick="saveFinalSettings()">설정 저장하기</button>
+    </div>
+
+    <div id="view-admin-result" class="hidden" style="background:white; border-radius:10px;">
+      <h3 id="result-title" style="color:var(--main);">🎉 상담 배정 결과</h3>
+      <div id="result-assigned" style="margin-bottom:20px;"></div>
+      <div id="result-conflicts" style="color:#d93025; font-size:14px; background:#fdf2f2; padding:10px; border-radius:8px;"></div>
+      
+      <div class="no-print" style="display:flex; gap:10px; margin-top:20px;">
+        <button class="btn" style="background:#34a853; flex:1;" onclick="window.print()">🖨️ PDF 인쇄</button>
+        <button class="btn" style="background:#fbbc05; color:#333; flex:1;" onclick="saveAsImage()">🖼️ 이미지 저장</button>
+      </div>
+      <button class="btn btn-small no-print" style="width:100%; margin-top:10px;" onclick="location.reload()">처음으로 돌아가기</button>
+    </div>
+
+    <div id="adminBtn" onclick="showAdminPwInput()">Admin</div>
+  </div>
+
+  <script>
+    let activeCode = ""; let activeName = ""; let selectedSlots = []; let preloadedData = null;
+
+    function showLoading(show) { document.getElementById('loading').style.display = show ? 'flex' : 'none'; }
+
+    function checkParentCode() {
+      const code = document.getElementById('parentCode').value;
+      if(!code) return alert('코드를 입력하세요.');
+      showLoading(true);
+      google.script.run.withSuccessHandler(data => {
+        showLoading(false);
+        if(!data) return alert('아직 상담 일정이 등록되지 않은 학급입니다.');
+        activeCode = code; preloadedData = data;
+        document.getElementById('view-p-code').classList.add('hidden');
+        document.getElementById('view-p-name').classList.remove('hidden');
+      }).getClassSlots(code);
+    }
+
+    function checkParentName() {
+      activeName = document.getElementById('parentName').value;
+      if(!activeName) return alert('이름을 입력하세요.');
+      showLoading(true);
+      google.script.run.withSuccessHandler(status => {
+        showLoading(false);
+        if(status.exists) {
+          if(confirm("이미 신청을 완료 하였습니다.\n상담 신청 시간을 수정하시겠습니까?")) {
+             document.getElementById('consultType').value = status.type;
+             openForm(status.choices);
+          } else {
+             location.reload();
+          }
+        } else {
+          openForm([]);
+        }
+      }).checkUserStatus(activeCode, activeName);
+    }
+
+    function openForm(existingChoices) {
+      document.getElementById('view-p-name').classList.add('hidden');
+      document.getElementById('view-p-form').classList.remove('hidden');
+      selectedSlots = existingChoices;
+      const cont = document.getElementById('slot-container'); cont.innerHTML = '';
+      
+      if (preloadedData.length === 0) {
+          cont.innerHTML = "<div style='color:red; text-align:center;'>상담 가능 시간이 없습니다.</div>";
+          return;
+      }
+
+      preloadedData.forEach(day => {
+        const title = document.createElement('div'); title.className = 'date-header'; title.innerText = day.date;
+        cont.appendChild(title);
+        
+        const grid = document.createElement('div'); grid.className = 'slot-grid';
+        day.slots.forEach(s => {
+          const val = day.date + " " + s;
+          const btn = document.createElement('div'); btn.className = 'slot-btn'; btn.innerText = s;
+          if(existingChoices.includes(val)) btn.classList.add('active');
+          btn.onclick = () => { 
+            btn.classList.toggle('active'); 
+            selectedSlots = [];
+            document.querySelectorAll('.slot-grid').forEach((g, idx) => {
+               const dayDate = preloadedData[idx].date;
+               g.querySelectorAll('.slot-btn.active').forEach(b => selectedSlots.push(dayDate + " " + b.innerText));
+            });
+          };
+          grid.appendChild(btn);
+        });
+        cont.appendChild(grid);
+      });
+    }
+
+    function submitApplication() {
+      if(selectedSlots.length === 0) return alert('시간을 1개 이상 선택해주세요.');
+      showLoading(true);
+      const data = { classCode: activeCode, name: activeName, type: document.getElementById('consultType').value, choices: selectedSlots };
+      google.script.run.withSuccessHandler(m => { showLoading(false); alert(m); location.reload(); }).submitApp(data);
+    }
+
+    // 선생님 요청사항: 버튼 누르면 바로 숨기기
+    function showAdminPwInput() { 
+      document.getElementById('view-p-code').classList.add('hidden'); 
+      document.getElementById('view-admin-pw').classList.remove('hidden'); 
+      document.getElementById('adminBtn').classList.add('hidden'); 
+    }
+    
+    function verifyPw() {
+      const pw = document.getElementById('adminPw').value;
+      showLoading(true);
+      google.script.run.withSuccessHandler(isOk => {
+        showLoading(false);
+        if(!isOk) return alert('비밀번호가 틀렸습니다.');
+        document.getElementById('view-admin-pw').classList.add('hidden');
+        document.getElementById('view-admin-code').classList.remove('hidden');
+      }).verifyAdmin(pw);
+    }
+
+    // 선생님 요청사항: 리스트 출력 시 개별 삭제 버튼 탑재
+    function loadClassAdmin() {
+      activeCode = document.getElementById('adminClassCode').value;
+      if(!activeCode) return alert('학급 코드를 입력해주세요.');
+      showLoading(true);
+      google.script.run.withSuccessHandler(res => {
+        showLoading(false);
+        document.getElementById('view-admin-code').classList.add('hidden');
+        if(res.exists) {
+          document.getElementById('view-admin-dashboard').classList.remove('hidden');
+          document.getElementById('app-count').innerText = res.apps.length;
+          
+          // 삭제 버튼 추가된 리스트
+          document.getElementById('app-list').innerHTML = res.apps.map(a => 
+            `<div class="list-item">
+               <b>${a.name}</b> (${a.type})<br><small>${a.choices}</small>
+               <button class="delete-btn" style="top:15px;" onclick="deleteStudentApp('${a.name}')">삭제</button>
+             </div>`
+          ).join('');
+          
+          document.getElementById('tDur').value = res.config.duration;
+          document.getElementById('tBrk').value = res.config.breakTime;
+          document.getElementById('date-list-container').innerHTML = '';
+          res.config.dates.forEach(d => createDateRow(d.date, d.start, d.end));
+        } else {
+          document.getElementById('view-admin-setup').classList.remove('hidden');
+          addNewDateRow();
+        }
+      }).getClassAdminData(activeCode);
+    }
+
+    // 선생님 요청사항: 삭제 확인 알림창 및 재접속 처리 (새로고침 없이 유지)
+    function deleteStudentApp(name) {
+      if(confirm(name + " 학생의 상담 신청 내역을 삭제하시겠습니까?")) {
+        showLoading(true);
+        google.script.run.withSuccessHandler(msg => {
+          showLoading(false);
+          alert(msg);
+          loadClassAdmin(); // 화면 새로고침 없이 현황 리스트만 부드럽게 재요청
+        }).deleteApplication(activeCode, name);
+      }
+    }
+
+    function goToEditWithConfirm() {
+      if(confirm("상담 일정을 수정하시겠습니까?")) {
+        document.getElementById('view-admin-dashboard').classList.add('hidden');
+        document.getElementById('view-admin-setup').classList.remove('hidden');
+      }
+    }
+
+    function createDateRow(d, s, e) {
+      const div = document.createElement('div'); div.className = 'card date-row';
+      div.innerHTML = `<button class="delete-btn" onclick="this.parentElement.remove()">🗑️ 삭제</button>
+                       날짜: <input type="date" class="d-input" value="${d}"><br>
+                       시작: <input type="time" class="s-input" value="${s}"> 
+                       종료: <input type="time" class="e-input" value="${e}">`;
+      document.getElementById('date-list-container').appendChild(div);
+    }
+
+    function addNewDateRow() {
+      const rows = document.querySelectorAll('.date-row');
+      let d = "2026-05-01", s = "15:00", e = "16:40";
+      if(rows.length > 0) {
+        const last = new Date(rows[rows.length-1].querySelector('.d-input').value);
+        last.setDate(last.getDate() + 1); d = last.toISOString().split('T')[0];
+        s = rows[rows.length-1].querySelector('.s-input').value; e = rows[rows.length-1].querySelector('.e-input').value;
+      }
+      createDateRow(d, s, e);
+    }
+
+    function saveFinalSettings() {
+      showLoading(true);
+      const conf = { classCode: activeCode, duration: document.getElementById('tDur').value, breakTime: document.getElementById('tBrk').value, dates: Array.from(document.querySelectorAll('.date-row')).map(r => ({ date: r.querySelector('.d-input').value, start: r.querySelector('.s-input').value, end: r.querySelector('.e-input').value })) };
+      google.script.run.withSuccessHandler(m => { showLoading(false); alert(m); location.reload(); }).saveClassConfig(conf);
+    }
+
+    function doFinalAssign() { 
+      showLoading(true); 
+      google.script.run.withSuccessHandler(res => { 
+        showLoading(false);
+        if(res.error) return alert(res.error);
+        
+        document.getElementById('view-admin-dashboard').classList.add('hidden');
+        document.getElementById('view-admin-result').classList.remove('hidden');
+        document.getElementById('result-title').innerText = `🎉 ${activeCode}반 배정 결과`;
+
+        let html = '<table style="width:100%; border-collapse:collapse; font-size:14px; margin-bottom:15px;">';
+        html += '<tr style="border-bottom:2px solid #0035ad; text-align:left;"><th>시간</th><th>이름</th><th>방식</th></tr>';
+        res.assigned.forEach(r => {
+          html += `<tr style="border-bottom:1px solid #eee;"><td style="padding:8px 0;">${r.time}</td><td><b>${r.name}</b></td><td>${r.type}</td></tr>`;
+        });
+        html += '</table>';
+        document.getElementById('result-assigned').innerHTML = html;
+
+        if(res.conflicts.length > 0) {
+          let confHtml = '<b>⚠️ 시간 조율 필요 (중복)</b><ul style="margin:5px 0; padding-left:20px;">';
+          res.conflicts.forEach(c => { confHtml += `<li><b>${c.name}</b> (${c.type})</li>`; });
+          confHtml += '</ul><small>* 선택하신 모든 시간이 겹쳐 배정되지 못했습니다. 개별 연락이 필요합니다.</small>';
+          document.getElementById('result-conflicts').innerHTML = confHtml;
+        } else {
+          document.getElementById('result-conflicts').innerHTML = "<b>✅ 미배정 인원 없이 완벽하게 배정되었습니다!</b>";
+        }
+      }).runClassAssign(activeCode); 
+    }
+
+    function saveAsImage() {
+      showLoading(true);
+      const target = document.getElementById('view-admin-result');
+      
+      const noPrintElements = document.querySelectorAll('.no-print');
+      noPrintElements.forEach(el => el.style.display = 'none');
+
+      html2canvas(target, { scale: 2, backgroundColor: "#ffffff" }).then(canvas => {
+        const link = document.createElement('a');
+        link.download = activeCode + '반_상담배정결과.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+
+        noPrintElements.forEach(el => el.style.display = '');
+        showLoading(false);
+      }).catch(err => {
+        alert("이미지 저장 중 오류가 발생했습니다.");
+        noPrintElements.forEach(el => el.style.display = '');
+        showLoading(false);
+      });
+    }
+  </script>
+</body>
+</html>
